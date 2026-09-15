@@ -1,0 +1,50 @@
+# Follow-up Prompt: UpNEPA — Location Confirmation & Browse Refresh
+
+Paste this into Replit Agent as a follow-up on the existing UpNEPA app. These are fixes/improvements to the app already built, not a rebuild — read the existing code for zone detection, reporting, and the Browse page before making changes, and keep the existing data model and style system (dark theme, status colors, tokens already defined) intact.
+
+---
+
+## Issue 1: Users can't correct a wrong auto-detected location
+
+Right now location is auto-detected once and the user has no way to fix it if it's wrong. Replace this with an explicit **location confirmation flow**, described below.
+
+## Issue 2: Add a location confirmation modal, triggered on first report and on location change
+
+### When it triggers
+- **First-time report**: the very first time a device submits an ON/OFF report, before the report is saved, show the confirmation modal.
+- **Location change**: if the device's detected geolocation has moved enough to plausibly be in a different zone since the last confirmed location (e.g. detected coordinates now fall outside the previously-confirmed zone's radius/polygon, or geolocation returns a materially different lat/lng), re-trigger the same confirmation modal before accepting the next report.
+- Store a `last_confirmed_zone_id` and `last_confirmed_at` (and the lat/lng at time of confirmation) on the device/user record so this check has something to compare against.
+- Do NOT re-trigger the modal on every single report if the location hasn't changed — only on first-ever report and on detected drift. Repeated confirmation prompts for no reason will kill engagement.
+
+### What the modal shows
+1. **Step 1 — "Is this you?"**: show the zone the app thinks the user is in (zone name, and ideally a small static map preview or pin) with two actions: **"Yes, that's me"** (confirms and proceeds) and **"No, let me set it"** (moves to step 2).
+2. **Step 2 — manual pin**: an interactive map (draggable pin or tap-to-place) defaulting to the app's best-guess location, letting the user pinpoint their actual location. On confirm, reverse-geocode / match the pinned coordinates to the nearest existing zone (or create a new zone if none exists nearby — reuse whatever zone-matching logic already exists in the report flow). Show the resolved zone name back to the user with a final "Confirm [Zone Name]" button before closing the modal.
+3. Once confirmed (either path), save `last_confirmed_zone_id`, `last_confirmed_at`, and the confirmed lat/lng, close the modal, and proceed with submitting the report that triggered it.
+
+### Map implementation
+- Use whatever lightweight mapping approach is easiest to stand up in this environment (e.g. Leaflet with OpenStreetMap tiles — no API key required, good fit for an MVP on Replit). Avoid adding a paid maps API dependency unless one is already in the project.
+- The map only needs to support: show current pin, tap/drag to move pin, confirm button. No routing, search-by-address, or other map features needed here.
+
+### Style for the modal
+- Follow the existing dark theme: modal surface uses the card surface token, rounded corners consistent with existing card radius, white/`Text Primary` heading, `Text Secondary` for supporting copy.
+- Zone name display should reuse the existing mono uppercase label style used elsewhere for zone/data labels.
+- Buttons: "Yes, that's me" as the neutral white-on-black primary action (per existing button system); "No, let me set it" as a ghost/outline secondary action; final "Confirm [Zone Name]" on step 2 as the primary action.
+- Keep this to a single clean modal, not a multi-page flow — steps 1 and 2 should feel like one interaction, not a wizard.
+
+---
+
+## Issue 3: Browse page needs a refresh without a full page reload
+
+- Add a refresh control on the Browse page (icon button, e.g. top-right of the list/search area, or a pull-to-refresh gesture if that's a natural fit for the existing mobile layout — pick whichever is simpler to implement well in this codebase).
+- On trigger, re-fetch zone statuses from the existing API/polling endpoint and update the list/map in place — no full page reload, preserve scroll position and any active search/filter state.
+- Show a brief loading indicator on the refresh control itself while fetching (e.g. spin the icon), and briefly disable repeat taps to avoid spamming the endpoint.
+- If the Browse page already polls on an interval, this manual refresh should just trigger that same fetch function on demand rather than duplicating logic.
+
+---
+
+## Definition of done
+
+- A first-time reporter is shown the location confirmation modal before their first report is saved, can accept the detected zone or manually pin their real location on a map, and that report is then correctly attributed to the confirmed zone.
+- If a returning user's detected location has drifted to a different zone, the same confirmation modal appears again before their next report is accepted.
+- Confirming location does not interrupt every single report — only first-time and on-drift.
+- The Browse page has a working refresh control that updates zone data in place without a full page reload, with a visible loading state and basic spam protection.

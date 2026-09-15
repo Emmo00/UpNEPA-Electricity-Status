@@ -84,6 +84,29 @@ export interface UserProfile {
   firstReportAt: string | null;
   /** @nullable */
   lastReportAt: string | null;
+  /** @nullable */
+  lastConfirmedZoneId: number | null;
+  /** @nullable */
+  lastConfirmedAt: string | null;
+  /** @nullable */
+  lastConfirmedLat: number | null;
+  /** @nullable */
+  lastConfirmedLng: number | null;
+}
+
+export interface LocationConfirmationInput {
+  zoneId: number;
+  lat: number;
+  lng: number;
+}
+
+export interface LocationConfirmation {
+  deviceId: string;
+  zoneId: number;
+  zoneName: string;
+  confirmedAt: string;
+  lat: number;
+  lng: number;
 }
 
 export type ListZonesParams = {
@@ -93,5 +116,18 @@ search?: string;
  * @maximum 50
  */
 limit?: number;
+};
+
+export type GetNearestZoneParams = {
+/**
+ * @minimum -90
+ * @maximum 90
+ */
+lat: number;
+/**
+ * @minimum -180
+ * @maximum 180
+ */
+lng: number;
 };
 

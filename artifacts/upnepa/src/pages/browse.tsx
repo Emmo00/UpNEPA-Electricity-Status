@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Search, SlidersHorizontal } from 'lucide-react';
+import { AlertCircle, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
 import {
   getGetZoneHistoryQueryKey,
   getGetZoneQueryKey,
@@ -15,6 +15,7 @@ import { SEED_HISTORY, SEED_ZONE, SEED_ZONES, formatMinutes, formatTime, statusL
 export default function BrowsePage() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(SEED_ZONE.id);
+  const [refreshLocked, setRefreshLocked] = useState(false);
   const params = useMemo(() => ({ search: search.trim() || undefined, limit: 50 }), [search]);
   const listQuery = useListZones(params, { query: { queryKey: getListZonesQueryKey(params), staleTime: 30000 } });
   const zoneQuery = useGetZone(selectedId, { query: { queryKey: getGetZoneQueryKey(selectedId), staleTime: 20000, refetchInterval: 30000 } });
@@ -27,6 +28,13 @@ export default function BrowsePage() {
   const selected = zoneQuery.data ?? zones.find((zone) => zone.id === selectedId) ?? SEED_ZONE;
   const coverageRadius = zoneQuery.data?.radiusM;
   const history = historyQuery.data ?? SEED_HISTORY;
+
+  async function refreshBrowse() {
+    if (refreshLocked || listQuery.isFetching || zoneQuery.isFetching || historyQuery.isFetching) return;
+    setRefreshLocked(true);
+    await Promise.all([listQuery.refetch(), zoneQuery.refetch(), historyQuery.refetch()]);
+    window.setTimeout(() => setRefreshLocked(false), 900);
+  }
 
   useEffect(() => {
     if (zones.length && !zones.some((zone) => zone.id === selectedId)) setSelectedId(zones[0].id);
@@ -41,7 +49,12 @@ export default function BrowsePage() {
             <h1 className="text-[34px] font-semibold leading-none tracking-[-0.065em] sm:text-[44px]">Browse zones</h1>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-[#9f9fa0]">Scan the neighborhood before you set out. Signals are community-confirmed, not predictions.</p>
           </div>
-          <div className="font-label flex items-center gap-2 text-[10px] text-[#6a6b6b]"><SlidersHorizontal size={13} /> {zones.length} zones in view</div>
+          <div className="flex items-center gap-4">
+            <div className="font-label flex items-center gap-2 text-[10px] text-[#6a6b6b]"><SlidersHorizontal size={13} /> {zones.length} zones in view</div>
+            <button type="button" onClick={() => void refreshBrowse()} disabled={refreshLocked || listQuery.isFetching || zoneQuery.isFetching || historyQuery.isFetching} aria-label="Refresh browse zones" data-testid="button-refresh-browse" className="inline-flex min-h-9 items-center gap-2 rounded-[8px] border border-[#343737] px-3 font-label text-[9px] text-[#9f9fa0] transition-colors hover:border-[#777979] hover:text-[#f5f5f7] disabled:cursor-wait disabled:opacity-60">
+              <RefreshCw size={13} className={refreshLocked || listQuery.isFetching || zoneQuery.isFetching || historyQuery.isFetching ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(270px,0.8fr)_minmax(0,1.2fr)]">

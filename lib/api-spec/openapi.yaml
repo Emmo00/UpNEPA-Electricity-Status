@@ -59,6 +59,39 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ZoneSummary"
+  /zones/nearest:
+    get:
+      operationId: getNearestZone
+      tags: [zones]
+      summary: Match coordinates to the nearest electricity zone
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+      responses:
+        "200":
+          description: Nearest zone with current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneDetail"
+        "404":
+          description: No zone is available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /zones/{zoneId}:
     get:
       operationId: getZone
@@ -158,6 +191,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserProfile"
+  /profile/{deviceId}/location:
+    post:
+      operationId: confirmLocation
+      tags: [profile]
+      summary: Persist a device's confirmed zone and coordinates
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationConfirmationInput"
+      responses:
+        "200":
+          description: Location confirmation saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationConfirmation"
 components:
   schemas:
     HealthStatus:
@@ -261,5 +319,39 @@ components:
           type: ["string", "null"]
         lastReportAt:
           type: ["string", "null"]
-      required: [deviceId, reportCount, zonesReported, firstReportAt, lastReportAt]
+        lastConfirmedZoneId:
+          type: ["integer", "null"]
+        lastConfirmedAt:
+          type: ["string", "null"]
+        lastConfirmedLat:
+          type: ["number", "null"]
+        lastConfirmedLng:
+          type: ["number", "null"]
+      required: [deviceId, reportCount, zonesReported, firstReportAt, lastReportAt, lastConfirmedZoneId, lastConfirmedAt, lastConfirmedLat, lastConfirmedLng]
+    LocationConfirmationInput:
+      type: object
+      properties:
+        zoneId:
+          type: integer
+        lat:
+          type: number
+        lng:
+          type: number
+      required: [zoneId, lat, lng]
+    LocationConfirmation:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        zoneId:
+          type: integer
+        zoneName:
+          type: string
+        confirmedAt:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+      required: [deviceId, zoneId, zoneName, confirmedAt, lat, lng]
 

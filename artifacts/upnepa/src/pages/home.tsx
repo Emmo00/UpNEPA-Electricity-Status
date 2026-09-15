@@ -5,14 +5,19 @@ import {
   getGetZoneHistoryQueryKey,
   getGetZoneQueryKey,
   getGetProfileQueryKey,
+  getGetNearestZoneQueryKey,
   getListZonesQueryKey,
   useCreateReport,
+  useConfirmLocation,
   useGetZone,
+  useGetNearestZone,
+  useGetProfile,
   useGetZoneHistory,
   useListZones,
 } from '@workspace/api-client-react';
 import type { ReportInputStatus } from '@workspace/api-client-react';
 import { HistoryStrip } from '@/components/history-strip';
+import { LocationConfirmationModal, type Coordinates } from '@/components/location-confirmation-modal';
 import { StatusTile } from '@/components/status-tile';
 import { SEED_HISTORY, SEED_ZONE, getDeviceId } from '@/lib/upnepa';
 
@@ -23,6 +28,9 @@ export default function HomePage() {
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const [locationLabel, setLocationLabel] = useState('Using a seeded zone nearby');
   const [receiptMessage, setReceiptMessage] = useState('');
+  const [pendingReport, setPendingReport] = useState<ReportInputStatus | null>(null);
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [confirmedLocation, setConfirmedLocation] = useState<{ zoneId: number; coordinates: Coordinates } | null>(null);
 
   const zonesQuery = useListZones(undefined, { query: { queryKey: getListZonesQueryKey(), staleTime: 30000 } });
   const zoneQuery = useGetZone(zoneId, {
@@ -31,12 +39,30 @@ export default function HomePage() {
   const historyQuery = useGetZoneHistory(zoneId, {
     query: { queryKey: getGetZoneHistoryQueryKey(zoneId), staleTime: 30000 },
   });
+  const profileQuery = useGetProfile(deviceId, {
+    query: { queryKey: getGetProfileQueryKey(deviceId), staleTime: 30000 },
+  });
+  const nearestParams = useMemo(() => coordinates ?? { lat: SEED_ZONE.centerLat, lng: SEED_ZONE.centerLng }, [coordinates]);
+  const nearestQuery = useGetNearestZone(nearestParams, {
+    query: {
+      queryKey: getGetNearestZoneQueryKey(nearestParams),
+      enabled: coordinates !== null,
+      staleTime: 60000,
+    },
+  });
   const createReport = useCreateReport();
+  const confirmLocation = useConfirmLocation();
 
   const firstZoneId = zonesQuery.data?.[0]?.id;
   useEffect(() => {
     if (firstZoneId) setZoneId(firstZoneId);
   }, [firstZoneId]);
+
+  useEffect(() => {
+    if (!nearestQuery.data || locationModalOpen) return;
+    setZoneId(nearestQuery.data.id);
+    setLocationLabel(`Detected near ${nearestQuery.data.name}`);
+  }, [locationModalOpen, nearestQuery.data]);
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -50,24 +76,64 @@ export default function HomePage() {
     );
   }, []);
 
-  const zone = zoneQuery.data ?? zonesQuery.data?.find((item) => item.id === zoneId) ?? SEED_ZONE;
+  const zone = zoneQuery.data ?? (zonesQuery.data?.find((item) => item.id === zoneId) as typeof SEED_ZONE | undefined) ?? SEED_ZONE;
   const history = historyQuery.data ?? SEED_HISTORY;
 
-  function report(status: ReportInputStatus) {
+  function submitReport(status: ReportInputStatus, reportZoneId: number, reportCoordinates: Coordinates) {
     setReceiptMessage('');
     createReport.mutate(
-      { zoneId, data: { deviceId, status, geoLat: coordinates?.lat ?? null, geoLng: coordinates?.lng ?? null } },
+      { zoneId: reportZoneId, data: { deviceId, status, geoLat: reportCoordinates.lat, geoLng: reportCoordinates.lng } },
       {
         onSuccess: (receipt) => {
           setReceiptMessage(receipt.message || 'Your signal is in the log.');
-          void queryClient.invalidateQueries({ queryKey: getGetZoneQueryKey(zoneId) });
-          void queryClient.invalidateQueries({ queryKey: getGetZoneHistoryQueryKey(zoneId) });
+          void queryClient.invalidateQueries({ queryKey: getGetZoneQueryKey(reportZoneId) });
+          void queryClient.invalidateQueries({ queryKey: getGetZoneHistoryQueryKey(reportZoneId) });
           void queryClient.invalidateQueries({ queryKey: getListZonesQueryKey() });
           void queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey(deviceId) });
         },
       },
     );
   }
+
+  function report(status: ReportInputStatus) {
+    setReceiptMessage('');
+    const storedLocation = confirmedLocation ?? (
+      profileQuery.data?.lastConfirmedZoneId
+        ? {
+            zoneId: profileQuery.data.lastConfirmedZoneId,
+            coordinates: {
+              lat: profileQuery.data.lastConfirmedLat ?? zone.centerLat,
+              lng: profileQuery.data.lastConfirmedLng ?? zone.centerLng,
+            },
+          }
+        : null
+    );
+    if (!storedLocation || storedLocation.zoneId !== zoneId) {
+      setPendingReport(status);
+      setLocationModalOpen(true);
+      return;
+    }
+    submitReport(status, storedLocation.zoneId, coordinates ?? storedLocation.coordinates);
+  }
+
+  async function confirmAndReport(confirmedZone: typeof SEED_ZONE, confirmedCoordinates: Coordinates) {
+    if (!pendingReport) return;
+    await confirmLocation.mutateAsync({
+      deviceId,
+      data: { zoneId: confirmedZone.id, lat: confirmedCoordinates.lat, lng: confirmedCoordinates.lng },
+    });
+    setConfirmedLocation({ zoneId: confirmedZone.id, coordinates: confirmedCoordinates });
+    setZoneId(confirmedZone.id);
+    setCoordinates(confirmedCoordinates);
+    setLocationLabel(`Location confirmed · ${confirmedZone.name}`);
+    setLocationModalOpen(false);
+    const status = pendingReport;
+    setPendingReport(null);
+    submitReport(status, confirmedZone.id, confirmedCoordinates);
+    void queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey(deviceId) });
+  }
+
+  const modalCoordinates = coordinates ?? { lat: zone.centerLat, lng: zone.centerLng };
 
   return (
     <div className="md:ml-[210px]">
@@ -120,6 +186,18 @@ export default function HomePage() {
           <span className="text-[#f5f5f7]">One tap is enough.</span> Your anonymous signal helps the next person know before they reach for the switch.
         </div>
       </div>
+      <LocationConfirmationModal
+        open={locationModalOpen}
+        zone={zone}
+        initialCoordinates={modalCoordinates}
+        pendingStatus={pendingReport}
+        isSaving={confirmLocation.isPending || createReport.isPending}
+        onClose={() => {
+          setLocationModalOpen(false);
+          setPendingReport(null);
+        }}
+        onConfirm={confirmAndReport}
+      />
     </div>
   );
 }

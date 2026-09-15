@@ -1,10 +1,15 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte } from "drizzle-orm";
-import { db, deviceUsersTable, reportsTable, zonesTable } from "@workspace/db";
+import { db, deviceUsersTable, reportsTable } from "@workspace/db";
 import {
+  ConfirmLocationBody,
+  ConfirmLocationParams,
+  ConfirmLocationResponse,
   CreateReportBody,
   CreateReportParams,
   CreateReportResponse,
+  GetNearestZoneQueryParams,
+  GetNearestZoneResponse,
   GetProfileParams,
   GetProfileResponse,
   GetZoneHistoryParams,
@@ -14,7 +19,7 @@ import {
   ListZonesQueryParams,
   ListZonesResponse,
 } from "@workspace/api-zod";
-import { getRecentReports, getZoneWithStatus, listZonesWithStatus } from "../lib/zones";
+import { getNearestZoneWithStatus, getRecentReports, getZoneWithStatus, listZonesWithStatus } from "../lib/zones";
 
 const router: IRouter = Router();
 
@@ -26,6 +31,20 @@ router.get("/zones", async (req, res): Promise<void> => {
   }
   const zones = await listZonesWithStatus(parsed.data.search, parsed.data.limit);
   res.json(ListZonesResponse.parse(zones.map(({ centerLat: _lat, centerLng: _lng, radiusM: _radius, ...zone }) => zone)));
+});
+
+router.get("/zones/nearest", async (req, res): Promise<void> => {
+  const parsed = GetNearestZoneQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const zone = await getNearestZoneWithStatus(parsed.data.lat, parsed.data.lng);
+  if (!zone) {
+    res.status(404).json({ error: "No zone is available" });
+    return;
+  }
+  res.json(GetNearestZoneResponse.parse(zone));
 });
 
 router.get("/zones/:zoneId", async (req, res): Promise<void> => {
@@ -137,6 +156,11 @@ router.get("/profile/:deviceId", async (req, res): Promise<void> => {
     .from(reportsTable)
     .where(eq(reportsTable.deviceId, parsed.data.deviceId))
     .orderBy(reportsTable.createdAt);
+  const [user] = await db
+    .select()
+    .from(deviceUsersTable)
+    .where(eq(deviceUsersTable.deviceId, parsed.data.deviceId))
+    .limit(1);
   const first = reports[0]?.createdAt ?? null;
   const last = reports.at(-1)?.createdAt ?? null;
   res.json(GetProfileResponse.parse({
@@ -145,6 +169,52 @@ router.get("/profile/:deviceId", async (req, res): Promise<void> => {
     zonesReported: new Set(reports.map((report) => report.zoneId)).size,
     firstReportAt: first?.toISOString() ?? null,
     lastReportAt: last?.toISOString() ?? null,
+    lastConfirmedZoneId: user?.lastConfirmedZoneId ?? null,
+    lastConfirmedAt: user?.lastConfirmedAt?.toISOString() ?? null,
+    lastConfirmedLat: user?.lastConfirmedLat ?? null,
+    lastConfirmedLng: user?.lastConfirmedLng ?? null,
+  }));
+});
+
+router.post("/profile/:deviceId/location", async (req, res): Promise<void> => {
+  const params = ConfirmLocationParams.safeParse(req.params);
+  const body = ConfirmLocationBody.safeParse(req.body);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const zone = await getZoneWithStatus(body.data.zoneId);
+  if (!zone) {
+    res.status(404).json({ error: "Zone not found" });
+    return;
+  }
+  const confirmedAt = new Date();
+  await db.insert(deviceUsersTable).values({
+    deviceId: params.data.deviceId,
+    lastConfirmedZoneId: body.data.zoneId,
+    lastConfirmedAt: confirmedAt,
+    lastConfirmedLat: body.data.lat,
+    lastConfirmedLng: body.data.lng,
+  }).onConflictDoUpdate({
+    target: deviceUsersTable.deviceId,
+    set: {
+      lastConfirmedZoneId: body.data.zoneId,
+      lastConfirmedAt: confirmedAt,
+      lastConfirmedLat: body.data.lat,
+      lastConfirmedLng: body.data.lng,
+    },
+  });
+  res.json(ConfirmLocationResponse.parse({
+    deviceId: params.data.deviceId,
+    zoneId: body.data.zoneId,
+    zoneName: zone.name,
+    confirmedAt: confirmedAt.toISOString(),
+    lat: body.data.lat,
+    lng: body.data.lng,
   }));
 });
 

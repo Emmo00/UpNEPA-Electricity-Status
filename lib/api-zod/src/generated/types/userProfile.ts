@@ -14,4 +14,12 @@ export interface UserProfile {
   firstReportAt: string | null;
   /** @nullable */
   lastReportAt: string | null;
+  /** @nullable */
+  lastConfirmedZoneId: number | null;
+  /** @nullable */
+  lastConfirmedAt: string | null;
+  /** @nullable */
+  lastConfirmedLat: number | null;
+  /** @nullable */
+  lastConfirmedLng: number | null;
 }

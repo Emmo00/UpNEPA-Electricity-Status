@@ -47,6 +47,40 @@ export const ListZonesResponse = zod.array(ListZonesResponseItem)
 
 
 /**
+ * @summary Match coordinates to the nearest electricity zone
+ */
+export const getNearestZoneQueryLatMin = -90;
+export const getNearestZoneQueryLatMax = 90;
+
+export const getNearestZoneQueryLngMin = -180;
+export const getNearestZoneQueryLngMax = 180;
+
+
+
+export const GetNearestZoneQueryParams = zod.object({
+  "lat": zod.coerce.number().min(getNearestZoneQueryLatMin).max(getNearestZoneQueryLatMax),
+  "lng": zod.coerce.number().min(getNearestZoneQueryLngMin).max(getNearestZoneQueryLngMax)
+})
+
+export const GetNearestZoneResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "parentArea": zod.string(),
+  "status": zod.enum(['ON', 'OFF', 'MIXED', 'STALE', 'NONE']),
+  "onCount": zod.number().int(),
+  "offCount": zod.number().int(),
+  "totalReports": zod.number().int(),
+  "lastConfirmedAt": zod.string().nullable(),
+  "minutesAgo": zod.number().int().nullable(),
+  "isStale": zod.boolean()
+}).and(zod.object({
+  "centerLat": zod.number(),
+  "centerLng": zod.number(),
+  "radiusM": zod.number().int()
+}))
+
+
+/**
  * @summary Get a zone and its current status
  */
 export const GetZoneParams = zod.object({
@@ -141,7 +175,37 @@ export const GetProfileResponse = zod.object({
   "reportCount": zod.number().int(),
   "zonesReported": zod.number().int(),
   "firstReportAt": zod.string().nullable(),
-  "lastReportAt": zod.string().nullable()
+  "lastReportAt": zod.string().nullable(),
+  "lastConfirmedZoneId": zod.number().int().nullable(),
+  "lastConfirmedAt": zod.string().nullable(),
+  "lastConfirmedLat": zod.number().nullable(),
+  "lastConfirmedLng": zod.number().nullable()
+})
+
+
+/**
+ * @summary Persist a device's confirmed zone and coordinates
+ */
+
+
+
+export const ConfirmLocationParams = zod.object({
+  "deviceId": zod.coerce.string().min(1)
+})
+
+export const ConfirmLocationBody = zod.object({
+  "zoneId": zod.number().int(),
+  "lat": zod.number(),
+  "lng": zod.number()
+})
+
+export const ConfirmLocationResponse = zod.object({
+  "deviceId": zod.string(),
+  "zoneId": zod.number().int(),
+  "zoneName": zod.string(),
+  "confirmedAt": zod.string(),
+  "lat": zod.number(),
+  "lng": zod.number()
 })
 
 

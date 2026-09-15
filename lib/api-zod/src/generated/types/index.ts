@@ -7,9 +7,12 @@
  */
 
 export * from './errorResponse';
+export * from './getNearestZoneParams';
 export * from './healthStatus';
 export * from './historyPoint';
 export * from './listZonesParams';
+export * from './locationConfirmation';
+export * from './locationConfirmationInput';
 export * from './reportInput';
 export * from './reportInputStatus';
 export * from './reportReceipt';
