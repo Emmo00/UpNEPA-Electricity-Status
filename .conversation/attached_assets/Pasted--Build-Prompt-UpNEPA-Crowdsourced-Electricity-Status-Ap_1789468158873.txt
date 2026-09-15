@@ -1,0 +1,130 @@
+# Build Prompt: UpNEPA — Crowdsourced Electricity Status App (MVP)
+
+Paste this whole document into Replit Agent as the project brief.
+
+---
+
+## 1. What we're building
+
+**App name: UpNEPA** — "up NEPA" is Nigerian slang for the moment power comes back on, so the name should double as the app's tone: relieved, communal, a little celebratory when the status flips to ON. Reflect this lightly in copy (e.g. the ON confirmation micro-copy can say something like "Up NEPA! ⚡") without overdoing it — the core UI should stay calm and legible, per the style section below.
+
+A web app (mobile-responsive, PWA-ready) where people report and check real-time electricity ("light") status for their local area, crowdsourced from nearby users. Think "Waze, but for power outages."
+
+**Core loop:** user opens app → sees power status for their zone (ON / OFF / Mixed, with how long ago it was last corroborated) → taps to confirm or correct → can also browse/search other zones.
+
+This is an MVP. Build it lean, but structure the code so reputation, zone-refinement, and rewards features (listed in "Post-MVP" below) can be added without a rewrite.
+
+---
+
+## 2. Core concepts (data model)
+
+- **Zone**: the reporting unit. NOT raw GPS — a named area (e.g. "Woji Estate, Phase 2") that many users share. For MVP, seed zones as simple geofenced polygons or radius-based clusters around a center point, editable later. Store `zone_id, name, center_lat, center_lng, radius_m (or polygon), parent_area (city/estate)`.
+- **Report**: `report_id, user_id (or device_id for anon), zone_id, status (ON/OFF), created_at, device_fingerprint, geo_lat, geo_lng (actual location at report time, for QA — separate from selected zone)`.
+- **Zone status (derived, not stored as truth)**: computed live from reports in a rolling time window (e.g. last 30 min, configurable). Logic:
+  - If ≥80% of reports in-window agree → show that status + "confirmed by N people nearby" + "last confirmed X min ago."
+  - If reports conflict (no status ≥80%) → show **"Mixed reports"** state with both counts. Do not force a false consensus.
+  - If zero reports in-window → show "No recent reports" + last known status with timestamp, clearly marked as stale.
+- **User**: `user_id, device_id, display_name (optional), created_at`. No mandatory signup for MVP — allow anonymous device-based reporting, with optional account creation to persist streaks/reputation across devices later.
+
+---
+
+## 3. MVP screens
+
+### Screen A — Report / Home
+- Auto-detect location (browser geolocation API) → match to nearest zone → show zone name with a "Not your area? Change" link (manual zone picker/search).
+- Big, high-contrast **ON** / **OFF** tap targets — this is the primary action, must be reachable with zero scrolling.
+- Below the tap targets, show current derived status for that zone (see logic above) so the user has context before/after reporting.
+- After tapping, show brief confirmation state ("Thanks — recorded") and a light animation, then return to status view.
+
+### Screen B — Browse / Search
+- Search bar to look up any zone by name.
+- List or map view of zones with their current status (ON / OFF / Mixed / No recent reports) and last-updated time.
+- Tapping a zone shows its detail: status, confirmation count, last-updated, and a small sparkline/history strip if data exists (optional stretch for MVP, easy to cut).
+
+### Screen C — Profile (minimal for MVP)
+- Device's report count, and placeholder UI for reputation/streaks (data model ready, full logic can be post-MVP — see below).
+
+---
+
+## 4. Anti-gaming (build into MVP, not post-launch)
+
+- Rate limit: max 1 report per zone per device per X minutes (e.g. 10 min) — reject/no-op silently beyond that, don't error loudly (don't teach abusers the exact limit).
+- Device fingerprinting (basic: device_id stored in localStorage/IndexedDB + IP-based secondary signal) to reduce trivial multi-account spam. Note in code comments that this is a soft signal, not foolproof — full reputation-weighted trust comes post-MVP.
+- Geo sanity check: flag (don't block) reports where reported geo jumps implausibly between zones in a short time window — log for later review, don't surface to the user yet.
+
+---
+
+## 5. Explicitly OUT of scope for MVP (stub the data model, skip the logic)
+
+- Full reputation scoring algorithm (agreement-weighted, time-decayed)
+- Contributor levels / badges
+- Streaks
+- Leaderboards
+- Push notification "power alerts" subscriptions
+- Sponsored business placements / rewards redemption
+- Zone auto-refinement from conflicting reports
+
+Leave clean extension points (e.g. a `reputation_score` field on User that's unused but present; a `notifications` table stub) so these slot in later without migration pain.
+
+---
+
+## 6. Tech suggestions (Replit-fit stack)
+
+- Frontend: React + Vite, mobile-first responsive layout (PWA-installable if straightforward, but don't let PWA config block shipping the core loop).
+- Backend: Node/Express within the same Repl (or Replit's built-in web framework scaffold), keeping frontend and backend in one project for simplicity.
+- Database: use **Replit's built-in Postgres (Neon-backed) database** if available in this environment — it's the path of least friction on Replit and avoids managing external DB credentials. Fall back to Replit's key-value store only for trivial config, not for report/zone data (it needs relational queries). A simple lat/lng + radius check is fine for MVP geo matching — no need for PostGIS.
+- Realtime-ish: polling every 30–60s on the status screen is fine for MVP; skip websockets unless Replit's environment makes it trivial to add later.
+- Geolocation: browser Geolocation API, with graceful fallback to manual zone search if denied/unavailable (mobile browsers on shaky connections will deny/fail geolocation often — design for that as the common case, not the edge case).
+- Env/secrets: use Replit Secrets for any API keys (e.g. if you later add a maps provider) rather than hardcoding.
+- Deployment: build it so it runs cleanly via Replit's "Run" button during development, and is ready for Replit Deployments (autoscale or static+API) once the MVP loop works — don't over-engineer deployment config before the core loop is proven.
+
+---
+
+## 7. UI Style Direction
+
+Use a **dark, editorial "control room" aesthetic** — calm and trustworthy, not alarmist, even though the content (power outages) can be stressful for users. Status color should carry almost all the emotional signal; everything else stays quiet and monochrome.
+
+**Theme:** dark
+
+| Token | Value | Role |
+|---|---|---|
+| Canvas | `#0f1011` | Page background |
+| Canvas Deep | `#090a0b` | Alternating full-bleed sections |
+| Card Surface | `#1c1d1e` | Zone cards, list rows |
+| Hover Surface | `#2e2e2e` | Pressed/hover state |
+| Power ON | `#22c55e` | ON status fill, confirmation ticks |
+| Power OFF | `#ef4444` | OFF status fill |
+| Mixed / Uncertain | `#eab308` | "Mixed reports" state, stale-data warnings |
+| Text Primary | `#f5f5f7` | Headings |
+| Text Secondary | `#9f9fa0` | Timestamps, meta text, descriptions — never full white |
+| Text Muted | `#6a6b6b` | Disabled states, tertiary labels |
+| Primary Action | `#ffffff` fill / `#000000` text | The ON/OFF tap buttons use status color instead; white-on-black reserved for neutral actions like "Search" or "Change zone" |
+
+**Typography:**
+- Headlines / status word ("POWER ON", "MIXED REPORTS"): a clean geometric sans at heavy weight, large size (e.g. 32–40px) — status should be readable at a glance, unlike Origin's whisper-weight serif. This app needs legibility-first, not gallery-quiet.
+- Body / meta text ("Confirmed by 14 people · 2 min ago"): 14–16px regular weight, `#9f9fa0`.
+- Uppercase tracked mono labels (zone names in list headers, "LAST UPDATED", badges): monospace, 11–12px, uppercase, letter-spacing ~0.15em — borrow this pattern directly, it reads as "data" rather than "marketing."
+
+**Components:**
+- **Status Card** (the hero of Screen A): full-bleed color tile using Power ON / OFF / Mixed as background, 24px radius, 32px padding, large status word + meta text in white, similar spirit to Origin's "Feature Category Card" (color *is* the signal, no icon needed to disambiguate).
+- **Tap Buttons**: two large pill or rounded-rect buttons (ON in green outline/fill, OFF in red outline/fill), minimum 56px tap height, positioned for one-thumb reach on mobile.
+- **Zone List Row**: card surface `#1c1d1e`, 16px radius, left-aligned zone name (mono uppercase label style for the sub-area, regular sans for the zone name), right-aligned status dot + timestamp.
+- **Search Input**: black background `#000000`, `8px` radius, generous left padding, placeholder like "Search your estate, street, or landmark."
+
+**Layout:** mobile-first single column, generous vertical spacing (16–24px between sections), no drop shadows — differentiate surfaces by color step only, same flat "gallery wall" philosophy as the reference.
+
+**Do:**
+- Let status color do the emotional work; keep chrome around it quiet and dark.
+- Keep the ON/OFF report action reachable in one tap from app open — no nested menus.
+- Show "Mixed reports" and "stale data" states honestly rather than forcing a single verdict.
+
+**Don't:**
+- Don't add urgency-red anywhere except the actual OFF status — don't make the whole app feel alarming.
+- Don't require signup before a user can view or submit a report.
+- Don't over-build reputation/leaderboard UI yet — stub it, don't ship it half-done.
+
+---
+
+## 8. Definition of done for this MVP
+
+A user can: open the app → see their zone auto-detected → see current status with confidence/recency → tap ON or OFF → see the status update reflect their report (and others') → search/browse another zone's status. Anti-gaming rate limiting works. No reputation/streaks/rewards UI is required to ship, but the data model doesn't block adding them later.

@@ -10,6 +10,12 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: zones
+    description: Electricity zones and derived status
+  - name: reports
+    description: Anonymous electricity reports
+  - name: profile
+    description: Anonymous device profile
 paths:
   /healthz:
     get:
@@ -24,6 +30,134 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /zones:
+    get:
+      operationId: listZones
+      tags: [zones]
+      summary: Browse electricity zones
+      description: Returns seeded zones with their current derived electricity status.
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Zones matching the search
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ZoneSummary"
+  /zones/{zoneId}:
+    get:
+      operationId: getZone
+      tags: [zones]
+      summary: Get a zone and its current status
+      parameters:
+        - name: zoneId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Zone detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneDetail"
+        "404":
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /zones/{zoneId}/history:
+    get:
+      operationId: getZoneHistory
+      tags: [zones]
+      summary: Get recent zone report history
+      parameters:
+        - name: zoneId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recent history points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoryPoint"
+  /zones/{zoneId}/reports:
+    post:
+      operationId: createReport
+      tags: [reports]
+      summary: Submit an anonymous electricity report
+      parameters:
+        - name: zoneId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportInput"
+      responses:
+        "201":
+          description: Report recorded and current status recalculated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportReceipt"
+        "200":
+          description: Report was rate limited and the current status is returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportReceipt"
+        "404":
+          description: Zone not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /profile/{deviceId}:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get anonymous device contribution summary
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Contribution summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +167,99 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    ZoneStatus:
+      type: string
+      enum: [ON, OFF, MIXED, STALE, NONE]
+    ZoneSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        parentArea:
+          type: string
+        status:
+          $ref: "#/components/schemas/ZoneStatus"
+        onCount:
+          type: integer
+        offCount:
+          type: integer
+        totalReports:
+          type: integer
+        lastConfirmedAt:
+          type: ["string", "null"]
+        minutesAgo:
+          type: ["integer", "null"]
+        isStale:
+          type: boolean
+      required: [id, name, parentArea, status, onCount, offCount, totalReports, lastConfirmedAt, minutesAgo, isStale]
+    ZoneDetail:
+      allOf:
+        - $ref: "#/components/schemas/ZoneSummary"
+        - type: object
+          properties:
+            centerLat:
+              type: number
+            centerLng:
+              type: number
+            radiusM:
+              type: integer
+          required: [centerLat, centerLng, radiusM]
+    HistoryPoint:
+      type: object
+      properties:
+        at:
+          type: string
+        onCount:
+          type: integer
+        offCount:
+          type: integer
+        status:
+          $ref: "#/components/schemas/ZoneStatus"
+      required: [at, onCount, offCount, status]
+    ReportInput:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [ON, OFF]
+        geoLat:
+          type: ["number", "null"]
+        geoLng:
+          type: ["number", "null"]
+      required: [deviceId, status]
+    ReportReceipt:
+      type: object
+      properties:
+        recorded:
+          type: boolean
+        message:
+          type: string
+        zone:
+          $ref: "#/components/schemas/ZoneDetail"
+      required: [recorded, message, zone]
+    UserProfile:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        reportCount:
+          type: integer
+        zonesReported:
+          type: integer
+        firstReportAt:
+          type: ["string", "null"]
+        lastReportAt:
+          type: ["string", "null"]
+      required: [deviceId, reportCount, zonesReported, firstReportAt, lastReportAt]
 

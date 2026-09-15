@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "UpNEPA"
+description = "A mobile-first crowdsourced electricity status app for Nigerian neighborhoods. Users can check local power status, confirm ON or OFF, browse other zones, and see recent report confidence without creating an account."
+version = "1.0.0"
+id = "artifacts/upnepa"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22326
+
+[services.development]
+run = "pnpm --filter @workspace/upnepa run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/upnepa", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/upnepa/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22326"
+BASE_PATH = "/"
